@@ -1,20 +1,20 @@
 import os
 import tempfile
 
-import cv2
-import torch
+try:
+    import torch
+    HAS_CUDA = torch.cuda.is_available()
+except Exception:
+    HAS_CUDA = False
+try:
+    import cv2
+    HAS_CV2 = True
+except Exception:
+    HAS_CV2 = False
 import streamlit as st
-import numpy as np
 from PIL import Image
 
-from transformers import AutoTokenizer, UMT5EncoderModel
-from diffusers.utils import export_to_video, load_image, load_video
 
-from longcat_video.context_parallel import context_parallel_util
-from longcat_video.pipeline_longcat_video import LongCatVideoPipeline
-from longcat_video.modules.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
-from longcat_video.modules.autoencoder_kl_wan import AutoencoderKLWan
-from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DModel
 
 
 def torch_gc():
@@ -29,18 +29,28 @@ st.set_page_config(
 )
 
 def get_fps(video_path):
+    if not HAS_CV2: return 15
     cap = cv2.VideoCapture(video_path)
-    original_fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = cap.get(cv2.CAP_PROP_FPS)
     cap.release()
-    
-    return original_fps
+    return fps or 15
 
 @st.cache_resource
 def load_model(checkpoint_dir):
-    """Load model, use cache to avoid reloading"""    
-    # Check GPU availability
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    torch_dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    if not HAS_CUDA:
+        raise RuntimeError("Khong co GPU. Can NVIDIA A100/H100 >= 40GB VRAM.")
+    if not os.path.exists(checkpoint_dir):
+        raise RuntimeError("Khong tim thay model tai: " + checkpoint_dir)
+    import torch, numpy as np
+    from transformers import AutoTokenizer, UMT5EncoderModel
+    from diffusers.utils import export_to_video, load_image, load_video
+    from longcat_video.context_parallel import context_parallel_util
+    from longcat_video.pipeline_longcat_video import LongCatVideoPipeline
+    from longcat_video.modules.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
+    from longcat_video.modules.autoencoder_kl_wan import AutoencoderKLWan
+    from longcat_video.modules.longcat_video_dit import LongCatVideoTransformer3DModel
+    device = "cuda"
+    torch_dtype = torch.bfloat16
     
     with st.spinner('Loading model...'):
         cp_split_hw = context_parallel_util.get_optimal_split(1)
@@ -73,13 +83,21 @@ def main():
     
     checkpoint_dir = st.text_input("Model Dir", "./weights/LongCat-Video")
 
-    # Load model
-    try:
-        pipe, device = load_model(checkpoint_dir)
-        st.success(f"Model loaded successfully! Device: {device}")
-    except Exception as e:
-        st.error(f"Model loading failed: {str(e)}")
-        return
+    pipe = None; device = "cuda"
+    if not HAS_CUDA:
+        st.warning("**Khong phat hien GPU**
+
+LongCat-Video can NVIDIA A100/H100 GPU >= 40GB VRAM.
+
+Streamlit Community Cloud khong co GPU.
+
+Hay dung: RunPod / Vast.ai / Google Colab Pro+")
+    else:
+        try:
+            pipe, device = load_model(checkpoint_dir)
+            st.success(f"Model loaded! Device: {device}")
+        except Exception as e:
+            st.error(f"Loi tai model: {str(e)}")
 
     with st.expander("💡 Example Prompts"):
         st.markdown("""
@@ -192,6 +210,11 @@ def main():
                 return
             
             # Set random seed
+            if not HAS_CUDA or pipe is None:
+                st.info("Khong the tao video - khong co GPU.")
+                return
+            import torch, numpy as np
+            from diffusers.utils import export_to_video, load_image, load_video
             generator = torch.Generator(device=device)
             generator.manual_seed(seed)
             
