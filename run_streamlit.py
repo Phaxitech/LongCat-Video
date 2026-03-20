@@ -85,13 +85,12 @@ def main():
 
     pipe = None; device = "cuda"
     if not HAS_CUDA:
-        st.warning("**Khong phat hien GPU**
-
-LongCat-Video can NVIDIA A100/H100 GPU >= 40GB VRAM.
-
-Streamlit Community Cloud khong co GPU.
-
-Hay dung: RunPod / Vast.ai / Google Colab Pro+")
+        st.warning(
+            "**Khong phat hien GPU (CUDA)**\n\n"
+            "LongCat-Video can NVIDIA A100/H100 GPU voi it nhat 40GB VRAM.\n\n"
+            "Streamlit Community Cloud khong co GPU.\n\n"
+            "Hay dung: RunPod / Vast.ai / Google Colab Pro+"
+        )
     else:
         try:
             pipe, device = load_model(checkpoint_dir)
